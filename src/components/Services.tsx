@@ -1,0 +1,4 @@
+import {services} from '@/data/services';
+import {Link} from 'react-router-dom';
+import ServiceIcon from './ServiceIcon';
+export default function Services(){return <section id="services" className="bg-[#f3f3f6] py-16 md:py-24"><div className="container-custom section-padding"><h2 className="text-primary text-4xl md:text-5xl text-center mb-12">Our Services</h2><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">{services.map(service=><Link key={service.slug} to={`/services/${service.slug}`} className="service-card bg-white border border-primary/15 rounded-2xl p-6 text-primary hover:border-primary focus-visible:outline focus-visible:outline-2 flex flex-col min-h-56"><ServiceIcon slug={service.slug}/><h3 className="text-xl md:text-2xl font-semibold mb-3">{service.title}</h3><p className="text-base text-primary/70">{service.description}</p></Link>)}</div></div></section>}

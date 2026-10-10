@@ -1,0 +1,5 @@
+import {useParams,Link} from "react-router-dom";
+import {getServiceBySlug} from "@/data/services";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
+export default function ServiceDetail(){const {slug}=useParams();const service=getServiceBySlug(slug||'');return <><Header/><main className="bg-white py-20"><div className="container-custom section-padding"><Link to="/#services" className="text-primary">← Our Services</Link><div className="grid md:grid-cols-2 gap-12 mt-10 items-center"><div><h1 className="text-primary mb-6">{service?.title||'Service not found'}</h1><p className="text-muted-foreground text-lg leading-8 mb-8">{service?.fullDescription}</p>{service&&<Link to={`/quote?service=${service.slug}`} className="inline-block rounded-full bg-tertiary text-primary px-6 py-4 font-semibold">Request a Free Estimate</Link>}</div><img src={service?.image || "/cleaning-placeholder.svg"} alt={service?.image === "/cleaning-placeholder.svg" ? "Company photo placeholder" : service?.title || ""} className="w-full rounded-3xl"/></div></div></main><Footer/></>}
