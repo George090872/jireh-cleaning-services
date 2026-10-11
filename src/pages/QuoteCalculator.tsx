@@ -15,7 +15,6 @@ const SERVICES: { value: Exclude<ServiceType, ''>; title: string; desc: string }
 const ADDONS = [
   { value: 'oven', label: 'Oven cleaning (+$35)' },
   { value: 'fridge', label: 'Fridge cleaning (+$35)' },
-  { value: 'laundry', label: 'Laundry (+$40)' },
 ];
 
 export default function QuoteCalculator() {

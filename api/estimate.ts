@@ -31,7 +31,7 @@ const ALLOWED_SERVICES = new Set([
   'commercial',
 ]);
 
-const ALLOWED_ADDONS = new Set(['oven', 'fridge', 'laundry']);
+const ALLOWED_ADDONS = new Set(['oven', 'fridge']);
 
 function isEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
