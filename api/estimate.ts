@@ -33,6 +33,76 @@ const ALLOWED_SERVICES = new Set([
 
 const ALLOWED_ADDONS = new Set(['oven', 'fridge', 'behind-appliances']);
 
+const SERVICE_LABELS: Record<string, string> = {
+  'regular': 'Regular / Recurring Cleaning',
+  'deep': 'Deep / Seasonal Cleaning',
+  'move-in-out': 'Move-In / Move-Out Cleaning',
+  'car-detailing': 'Interior Car Detailing',
+  'commercial': 'Light Commercial / Office Cleaning',
+};
+
+const ADDON_LABELS: Record<string, string> = {
+  'oven': 'Oven cleaning',
+  'fridge': 'Fridge cleaning',
+  'behind-appliances': 'Behind appliances (fridge & oven)',
+};
+
+function escHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+type EstimateData = {
+  name: string; email: string; phone: string; address: string;
+  service_type: string; bedrooms: number | null; bathrooms: number | null;
+  addons: string[]; preferred_date: string; notes: string;
+};
+
+// Sends a notification email to the business inbox via Resend.
+// Never throws: email failure must not fail the estimate request itself.
+async function sendNotificationEmail(d: EstimateData) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn('RESEND_API_KEY not set — skipping notification email');
+    return;
+  }
+  const serviceLabel = SERVICE_LABELS[d.service_type] ?? d.service_type;
+  const rows: [string, string][] = [
+    ['Name', d.name],
+    ['Email', d.email],
+    ['Phone', d.phone || '—'],
+    ['Service', serviceLabel],
+    ['Address', d.address || '—'],
+  ];
+  if (d.bedrooms != null) rows.push(['Bedrooms', String(d.bedrooms)]);
+  if (d.bathrooms != null) rows.push(['Bathrooms', String(d.bathrooms)]);
+  if (d.addons.length) rows.push(['Add-ons', d.addons.map((a) => ADDON_LABELS[a] ?? a).join(', ')]);
+  if (d.preferred_date) rows.push(['Preferred date', d.preferred_date]);
+  if (d.notes) rows.push(['Notes', d.notes]);
+
+  const htmlRows = rows
+    .map(([k, v]) => `<tr><td style="padding:8px 12px;font-weight:600;color:#555;white-space:nowrap;vertical-align:top;">${escHtml(k)}</td><td style="padding:8px 12px;">${escHtml(v)}</td></tr>`)
+    .join('');
+  const textRows = rows.map(([k, v]) => `${k}: ${v}`).join('\n');
+
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'JIREH Cleaning <estimates@jirehcleaning.ca>',
+        to: 'contactjirehcleaning@gmail.com',
+        reply_to: d.email,
+        subject: `New estimate request — ${d.name} (${serviceLabel})`,
+        html: `<div style="font-family:sans-serif;max-width:600px;"><h2 style="color:#1a1a2e;">New estimate request</h2><table style="border-collapse:collapse;width:100%;">${htmlRows}</table><p style="color:#888;font-size:12px;margin-top:16px;">Sent from the JIREH Cleaning website estimate form. Reply directly to this email to contact the customer.</p></div>`,
+        text: `New estimate request\n\n${textRows}\n\nReply directly to this email to contact the customer.`,
+      }),
+    });
+    if (!r.ok) console.error('resend failed', r.status, await r.text());
+  } catch (e) {
+    console.error('notification email error', e);
+  }
+}
+
 function isEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
@@ -111,6 +181,9 @@ export default async function handler(req: VercelReq, res: VercelRes) {
     console.error('estimate insert failed', error);
     return res.status(500).json({ ok: false, error: 'Could not save your request. Please try again.' });
   }
+
+  // Notify the business inbox (never fails the request if email fails).
+  await sendNotificationEmail({ name, email, phone, address, service_type, bedrooms, bathrooms, addons, preferred_date, notes });
 
   // Only now should the frontend show "Request received" + next steps.
   return res.status(200).json({ ok: true });
