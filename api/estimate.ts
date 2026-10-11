@@ -58,13 +58,11 @@ type EstimateData = {
 };
 
 // Sends a notification email to the business inbox via Resend.
-// Never throws: email failure must not fail the estimate request itself.
-async function sendNotificationEmail(d: EstimateData) {
+// Returns 'sent', or a failure reason. Never throws: email failure must
+// not fail the estimate request itself.
+async function sendNotificationEmail(d: EstimateData): Promise<{ ok: boolean; reason?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.warn('RESEND_API_KEY not set — skipping notification email');
-    return;
-  }
+  if (!apiKey) return { ok: false, reason: 'RESEND_API_KEY not set in Vercel' };
   const serviceLabel = SERVICE_LABELS[d.service_type] ?? d.service_type;
   const rows: [string, string][] = [
     ['Name', d.name],
@@ -97,9 +95,15 @@ async function sendNotificationEmail(d: EstimateData) {
         text: `New estimate request\n\n${textRows}\n\nReply directly to this email to contact the customer.`,
       }),
     });
-    if (!r.ok) console.error('resend failed', r.status, await r.text());
+    if (!r.ok) {
+      const body = await r.text();
+      console.error('resend failed', r.status, body);
+      return { ok: false, reason: `Resend rejected it (${r.status}): ${body.slice(0, 200)}` };
+    }
+    return { ok: true };
   } catch (e) {
     console.error('notification email error', e);
+    return { ok: false, reason: `Could not reach Resend: ${String(e).slice(0, 200)}` };
   }
 }
 
@@ -161,29 +165,45 @@ export default async function handler(req: VercelReq, res: VercelRes) {
     auth: { persistSession: false },
   });
 
-  const { error } = await supabase.from('estimate_requests').insert({
-    name,
-    email,
-    phone: phone || null,
-    address: address || null,
-    service_type,
-    bedrooms,
-    bathrooms,
-    addons,
-    preferred_date: preferred_date || null,
-    notes: notes || null,
-    website: null,
-    status: 'new',
-    source: 'website',
-  });
+  const { data: inserted, error } = await supabase
+    .from('estimate_requests')
+    .insert({
+      name,
+      email,
+      phone: phone || null,
+      address: address || null,
+      service_type,
+      bedrooms,
+      bathrooms,
+      addons,
+      preferred_date: preferred_date || null,
+      notes: notes || null,
+      website: null,
+      status: 'new',
+      source: 'website',
+    })
+    .select('id')
+    .single();
 
-  if (error) {
+  if (error || !inserted) {
     console.error('estimate insert failed', error);
     return res.status(500).json({ ok: false, error: 'Could not save your request. Please try again.' });
   }
 
-  // Notify the business inbox (never fails the request if email fails).
-  await sendNotificationEmail({ name, email, phone, address, service_type, bedrooms, bathrooms, addons, preferred_date, notes });
+  // Notify the business inbox, and record whether it worked on the row itself
+  // so delivery problems are visible in the Supabase table editor.
+  const notify = await sendNotificationEmail({ name, email, phone, address, service_type, bedrooms, bathrooms, addons, preferred_date, notes });
+  try {
+    await supabase
+      .from('estimate_requests')
+      .update({
+        notify_status: notify.ok ? 'sent' : 'failed',
+        notify_error: notify.ok ? null : (notify.reason ?? 'unknown error'),
+      })
+      .eq('id', inserted.id);
+  } catch (e) {
+    console.error('notify status update failed', e);
+  }
 
   // Only now should the frontend show "Request received" + next steps.
   return res.status(200).json({ ok: true });
